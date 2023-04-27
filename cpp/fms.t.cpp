@@ -80,6 +80,7 @@ int main()
 		carr_madan::test_tangent();
 		carr_madan::test_fit<double>();
 		binomial::fill_test();
+		binomial::fillp_test();
 		binomial::european::test();
 		binomial::american::test();
 	}

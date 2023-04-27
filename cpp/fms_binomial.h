@@ -1,5 +1,4 @@
 // fms_american.h - American option pricing
-// V_k = Y_1 + ... + Y_k, P(Y_j = 0) = 1/2 = P(Y_j = 1).
 // W_k = X_1 + ... + X_k, P(X_j = 1) = 1/2 = P(X_j = -1), X_j = 2Y_j - 1.
 // E[X_j] = 0, E[exp(s X_j)] = (exp(s) + exp(-s))/2 = cosh s.
 // F_k = f exp(s W_k/sqrt(n))/cosh^k(s/sqrt(n)).
@@ -43,8 +42,6 @@ namespace fms::binomial {
 			F[0] = f;
 		}
 		else {
-			X sn = s / sqrt(n);
-			X cn = cosh(sn);
 			for (size_t j = 0; j <= n; ++j) {
 				F[j] = forward(f, s, n, n, j);
 			}
@@ -89,24 +86,80 @@ namespace fms::binomial {
 
 	// Skewed Random Walk
 	// Let P(X_j = 1) = p, P(X_j = -1) = 1 - p be independent and Wp_n = a_n sum_j X_j - b_n
-	// Note E[X_j] = 2p - 1 and Var(X_j) = 4p(1 - p).
-	// Define Fp_n = f exp(s Wp_n)/cp_n where cp_n = E[s Wp_n].
+	// Note E[X_j] = 2p - 1 and Var(X_j) = 4p(1 - p) = 1 - E[X_j]^2 = 1 - (2p - 1)^2
+	// Define Fp_n = f exp(s Wp_n)/cp_n where cp_n = E[exp(s Wp_n)].
 	// !!! Find a_n and b_n such that E[Fp_n] = f and Var(log Fp_n) = s^2
-	// Fp_k(j)
+	// 
+	// 0 = E[Wp_n] = a_n n(2p - 1) - b_n n
+	// s^2 = Var(s Wp_n) = s^2 a_n^2 4p(1 - p)n
+	// so a_n^2 = 1/4p(1 - p)n and b_n = a_n (2 p - 1)
+	// 
+	// E[exp(s X_j)] = exp(s) p + exp(-s) (1 - p)
+	// c_n = E[exp(s (a_n X_j - b_n)] = (exp(a_n s) p + exp(-a_n s)(1 - p))/exp(s b_n)
+	// Fp_k(j) = f exp(s (a_n (2*j - k) - b_n)/c_n^k
 	template<class X>
 	constexpr X forwardp(X f, X s, X p, size_t n, size_t k, size_t j)
 	{
 		ensure(p > 0 and 1 - p > 0);
+		X a_n = sqrt(1 / (4 * p * (1 - p) * n)); // = sqrt(1/n) if p = 1/2
+		X b_n = a_n * (2 * p - 1); // = 0 if p = 1/2
+		X c_n = (exp(a_n * s) * p + exp(-a_n * s) * (1 - p)) / exp(s * b_n);
 
-		return 0; //!!! Implement
+		return f * exp(s * a_n * (2.0 * j - k) - s * b_n) / pow(c_n, k);
 	}
 
 	// Populate Fp_n(j) at step n = F.size() - 1
 	template<class X, size_t N>
 	constexpr size_t fillp(X f, X s, X p, std::span<X, N> F)
 	{
-		return 0; // !!! Implement
+		ensure(F.size() > 0);
+		size_t n = F.size() - 1;
+
+		if (n == 0) {
+			F[0] = f;
+		}
+		else {
+			for (size_t j = 0; j <= n; ++j) {
+				F[j] = forwardp(f, s, p, n, n, j);
+			}
+		}
+
+		return n;
 	}
+#ifdef _DEBUG
+	static int fillp_test()
+	{
+		double f = 100, s = 0.1, p = 0.5;
+		int n;
+		double F[10];
+		{
+			n = 0;
+			fillp(f, s, p, std::span(F, n + 1));
+			ensure(F[0] == f);
+		}
+		{
+			n = 1;
+			double sn = s / sqrt(n);
+			double cn = cosh(sn);
+
+			fillp(f, s, p, std::span(F, n + 1));
+			ensure(F[0] == f * exp(-sn) / cn);
+			ensure(F[1] == f * exp(sn) / cn);
+		}
+		{
+			n = 2;
+			double sn = s / sqrt(n);
+			double cn = cosh(sn);
+
+			fillp(f, s, p, std::span(F, n + 1));
+			ensure(F[0] == f * exp(-2 * sn) / (cn * cn));
+			ensure(F[1] == f * exp(0 * sn) / (cn * cn));
+			ensure(F[2] == f * exp(2 * sn) / (cn * cn));
+		}
+
+		return 0;
+	}
+#endif // _DEBUG
 
 	namespace european {
 
@@ -126,7 +179,11 @@ namespace fms::binomial {
 		template<class X, size_t N>
 		constexpr auto stepp(X p, std::span<X, N> v)
 		{
-			return v; // !!! Implement
+			for (size_t i = 0; i < v.size() - 1; ++i) {
+				v[i] = v[i]*(1 - p) + v[i + 1]*p;
+			}
+
+			return std::span<X>(v.begin(), v.size() - 1);
 		}
 
 		template<class Phi, class X, size_t N>
@@ -152,7 +209,7 @@ namespace fms::binomial {
 			std::transform(v.begin(), v.end(), v.begin(), phi);
 			// Expected value
 			while (v.size() > 1) {
-				v = stepp(v);
+				v = stepp(p, v);
 			}
 
 			return v[0];
