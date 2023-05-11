@@ -53,6 +53,7 @@ namespace fms::distribution {
 		// E[e^{sX}/E[e^{sX}] 1(X <= z)]
 		X _cdf(const X& z, const S& s) const override
 		{
+			//!!!Uncomment as a last resort.
 			//auto esx = std::exp(s * x);
 			//esx[x > z] = 0;
 
